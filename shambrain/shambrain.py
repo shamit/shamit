@@ -35,19 +35,19 @@ def simulate_run(infile, outfile, sr=0.5, cutoff=0.25, lfnl=3.0, hfnl=None):    
     image.to_filename(outfile)
 
 
-def run4bids(base_dir=bids_dir):
+def run4bids(bids_dir):
 
     import os
 
-    subdirs = [directory for directory in os.listdir(base_dir) if directory.startswith('sub-')]
+    subdirs = [directory for directory in os.listdir(bids_dir) if directory.startswith('sub-')]
 
     for sub in subdirs:
 
-        funcs = [dircontent for dircontent in os.listdir(os.path.join(base_dir, sub, 'func'))
+        funcs = [dircontent for dircontent in os.listdir(os.path.join(bids_dir, sub, 'func'))
                  if dircontent.endswith('.nii.gz')]
 
         for func in funcs:
-            in_file = os.path.join(base_dir, sub, 'func', func)
-            out_file = os.path.join(base_dir, 'derivatives', sub, 'shambrain',
+            in_file = os.path.join(bids_dir, sub, 'func', func)
+            out_file = os.path.join(bids_dir, 'derivatives', sub, 'shambrain',
                                     func.replace('.nii.gz', '_sham.nii.gz'))
             simulate_run(in_file, out_file)
