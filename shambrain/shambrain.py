@@ -2,14 +2,17 @@
 Simulate fMRI run with no activation.
 """
 
+# parse as command line argument
+# bids_dir
 
-def simulate_run(infile, outfile, sr, cutoff):
+
+def simulate_run(infile, outfile, sr=0.5, cutoff=0.25, lfnl=3.0, hfnl=None):    # TODO: what would be a good LPF cutoff?
 
     # TODO: make a workflow out of it
     from nipype.interfaces import fsl
 
     # perform motion correction using mcflirt implemented by nipype
-    mcfile = '{}_mc.nii.gz'.format(infile)
+    mcfile = infile.replace('.nii.gz','_mc.nii.gz')
     mcflt = fsl.MCFLIRT(in_file=infile,
                         out_file=mcfile)
     mcflt.run()
@@ -23,12 +26,28 @@ def simulate_run(infile, outfile, sr, cutoff):
     # and cutoff frequency of the low-pass filter.
     # optional inputs are low frequency noise (%) (lfnl)
     # and high frequency noise (%) (hfnl)
-    sr = 0.5
-    cutoff = 0.25     # TODO: what would be a good LPF cutoff?
 
     from mvpa2.misc.data_generators import autocorrelated_noise
-    shambold = autocorrelated_noise(ds, sr, cutoff)
+    shambold = autocorrelated_noise(ds, sr, cutoff, lfnl, hfnl)
 
     # save to nifti file
     image = map2nifti(shambold)
-    image.to_filename('{}.nii.gz'.format(outfile))
+    image.to_filename(outfile)
+
+
+def run4bids(base_dir=bids_dir):
+
+    import os
+
+    subdirs = [directory for directory in os.listdir(base_dir) if directory.startswith('sub-')]
+
+    for sub in subdirs:
+
+        funcs = [dircontent for dircontent in os.listdir(os.path.join(base_dir, sub, 'func'))
+                 if dircontent.endswith('.nii.gz')]
+
+        for func in funcs:
+            in_file = os.path.join(base_dir, sub, 'func', func)
+            out_file = os.path.join(base_dir, 'derivatives', sub, 'shambrain',
+                                    func.replace('.nii.gz', '_sham.nii.gz'))
+            simulate_run(in_file, out_file)
