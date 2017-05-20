@@ -6,7 +6,7 @@ Simulate fMRI run with no activation.
 # bids_dir
 
 
-def simulate_run(infile, outfile, sr=0.5, cutoff=0.25, lfnl=3.0, hfnl=None):    # TODO: what would be a good LPF cutoff?
+def simulate_run(infile, outfile, lfnl=3.0, hfnl=None):
 
     # TODO: make a workflow out of it
     from nipype.interfaces import fsl
@@ -21,6 +21,11 @@ def simulate_run(infile, outfile, sr=0.5, cutoff=0.25, lfnl=3.0, hfnl=None):    
     from mvpa2.datasets.mri import fmri_dataset, map2nifti
     ds = fmri_dataset(mcfile)
 
+    # get TR from sample attributes
+    tr = ds.sa['time_coords'][1] - ds.sa['time_coords'][0]
+    # convert to sampling rate in Hz
+    sr = 1 / tr
+    cutoff = sr / 2     # TODO: what would be a good LPF cutoff?
     # produce simulated 4D fmri data
     # mandatory inputs are dataset, sampling rate (Hz),
     # and cutoff frequency of the low-pass filter.
