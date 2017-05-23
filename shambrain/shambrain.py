@@ -9,10 +9,10 @@ Simulate fMRI run with no activation.
 
 def simulate_run(infile, outfile, lfnl=3.0, hfnl=None):
 
-    # TODO: make a workflow out of it
     from nipype.interfaces import fsl
+    fsl.FSLCommand.set_default_output_type('NIFTI_GZ')
 
-    # perform motion correction using mcflirt implemented by nipype
+    # perform motion correction using mcflirt implemented by nipype.
     mcfile = infile.replace('.nii.gz', '_mc.nii.gz')
     mcflt = fsl.MCFLIRT(in_file=infile,
                         out_file=mcfile)
@@ -23,10 +23,12 @@ def simulate_run(infile, outfile, lfnl=3.0, hfnl=None):
     ds = fmri_dataset(mcfile)
 
     # get TR from sample attributes
-    tr = ds.sa['time_coords'][1] - ds.sa['time_coords'][0]
+    tr = float(ds.sa['time_coords'][1] - ds.sa['time_coords'][0])
+
     # convert to sampling rate in Hz
-    sr = 1 / tr
-    cutoff = 1 / (2 * tr)    # TODO: what would be a good LPF cutoff?
+    sr = 1.0 / tr
+    cutoff = 1.0 / (2.0 * tr)
+
     # produce simulated 4D fmri data
     # mandatory inputs are dataset, sampling rate (Hz),
     # and cutoff frequency of the low-pass filter.
