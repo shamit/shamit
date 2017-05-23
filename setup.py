@@ -31,7 +31,7 @@ setup(
              'duecredit=duecredit.cmdline.main:main',
         ],
     },
-    author='Oliver Contier, Yaroslav Halchenko',
+    author='Yaroslav Halchenko, Oliver Contier',
     author_email='o.contier@gmail.com',
     description='fmri data simulator',
     #TODO: description
