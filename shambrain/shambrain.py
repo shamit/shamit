@@ -13,13 +13,14 @@ from mvpa2.datasets.mri import fmri_dataset, map2nifti
 from mvpa2.misc.data_generators import double_gamma_hrf
 from mvpa2.misc.data_generators import single_gamma_hrf
 from mvpa2.misc.data_generators import autocorrelated_noise
+from mvpa2.misc.data_generators import simple_hrf_dataset
 from nipype.interfaces import fsl
 import csv
 import os
 import itertools
 
 
-def simulate_run(infile, outfile, lfnl=3.0, hfnl=None):
+def simulate_run(infile, workdir, lfnl=3, hfnl=.5):
     """
     Simple simulation of 4D fmri data. Takes a given functional image,
     performs motion correction, computes the mean and adds autocorrelated
@@ -37,10 +38,10 @@ def simulate_run(infile, outfile, lfnl=3.0, hfnl=None):
         High frequency noise level. Default = None.
     """
 
-    fsl.FSLCommand.set_default_output_type('NIFTI_GZ')
-
     # perform motion correction using mcflirt implemented by nipype.
-    mcfile = infile.replace('.nii.gz', '_mc.nii.gz')
+    fsl.FSLCommand.set_default_output_type('NIFTI_GZ')
+    infilename = infile.split('/')[-1]
+    mcfile = os.path.join(workdir, infilename.replace('.nii.gz', '_mc.nii.gz'))
     mcflt = fsl.MCFLIRT(in_file=infile,
                         out_file=mcfile)
     mcflt.run()
@@ -53,23 +54,14 @@ def simulate_run(infile, outfile, lfnl=3.0, hfnl=None):
 
     # convert to sampling rate in Hz
     sr = 1.0 / tr
-    cutoff = 1.0 / (2.0 * tr)
+    cutoff = sr / 4
 
     # produce simulated 4D fmri data
-    # mandatory inputs are dataset, sampling rate (Hz),
-    # and cutoff frequency of the low-pass filter.
-    # optional inputs are low frequency noise (%) (lfnl)
-    # and high frequency noise (%) (hfnl)
-
-    shambold = autocorrelated_noise(ds, sr, cutoff, lfnl, hfnl)
-
-    # save to nifti file
-    #image = map2nifti(shambold)
-    #image.to_filename(oswutfile)
+    shambold = autocorrelated_noise(ds, sr, cutoff, lfnl=lfnl, hfnl=hfnl)
     return shambold
 
 
-def get_onsets_famface(inpath, run_scalar=1, run_number=1):
+def get_onsets_famface(inpath, amplitudes=[8, 1]):
     """
     get event onsets from text file
     """
@@ -103,97 +95,56 @@ def get_onsets_famface(inpath, run_scalar=1, run_number=1):
     unfam_onsets = list(itertools.chain(*unfam_onsets))
     unfam_onsets = sorted([float(i) for i in unfam_onsets])
 
-    amplitudes = [2, 0.5]
-    amplitudes = [i * run_scalar * run_number for i in amplitudes]
+    spec = [{'chunks': 0, 'duration': 1.5, 'onset': fam_onsets, 'targets': 'familiar', 'amplitude': amplitudes[0], 'roivalue': 2},
+            {'chunks': 0, 'duration': 1.5, 'onset': unfam_onsets, 'targets': 'unfamiliar', 'amplitude': amplitudes[1],
+             'roivalue': 2}]
 
-    spec = {'roivalues': [5, 5],
-            'conditions': ['fam', 'unfam'], 'onsets': [fam_onsets, unfam_onsets],
-            'amplitudes': amplitudes], 'durations': [1.5, 1.5]}
-
-
-# with_signal = add_signal_custom(ds, ms, spec)
-
+    return spec
 
 def add_signal_custom(ds, ms, spec, tpeak=0.8, fwhm=1, fir_length=15):
     """
     add signal to a pure noise simulated image
-    (as generated e.g. by simulate_run())
+    (as generated e.g. by simulate_run)
     """
 
-    """
-    data input
-    """
     dataset_with_signal = ds.copy()
 
     """
-    get some parameters from data
+    some parameters from data
     """
-    # compute TR
+    #  TR
     tr = ds.sa['time_coords'][1] - ds.sa['time_coords'][0]
     nsamples = len(ds.samples)
-    # length of functional run in seconds
-    t_run_s = nsamples * tr
+
     # temporal resolution of hrf model in seconds
     tres = 0.5
-    # length of functional run in tres units
-    t_run_tres = t_run_s / tres
 
     """
     loop over specified conditions
     """
-    for cond in range(len(spec['conditions'])):
-        condition = spec['conditions'][cond]
-        roivalue = spec['roivalues'][cond]
-        amplitude = spec['amplitudes'][cond]
-        duration = spec['durations'][cond]
-        # stimulus duration in tres units
-        hr_duration = duration / tres
+    for cond in spec:
+        # condition = spec['conditions'][cond]
+        roivalue = cond['roivalue']
+        onsets = cond['onset']
+        amplitude = cond['amplitude']
+        sigchange = float(amplitude) / 100
 
-        # TODO: make HRF amplitude z value --> derive from mean and sd of the input data set
-
-        """
-        transform amplitude from z score to voxel intensity
-        """
         # get voxel indices for roi
-        roi_indices = np.where(ms.samples[0] == roivalue)
-        # calculate mean and std
-        mean =  np.mean(
-            [np.mean(sample[roi_indices]) for sample in ds.samples])
-        std = np.mean(
-            [np.std(sample[roi_indices]) for sample in ds.samples])
-        # transform z
-        amp = (amplitude * std) + mean
+        roi_indices = np.where(ms.samples[0] == roivalue)[0]
 
         """
         model hrf
         """
-        # dummy time points of hrf
-        hrf_x = np.arange(0, float(fir_length) * tres, tres)
-
-        # function to produce hrf
-        hrf_gen = lambda t: double_gamma_hrf(t) - single_gamma_hrf(t, tpeak, fwhm, amp)
-
-        # hrf model
-        hrf = hrf_gen(hrf_x)
-
-        # generate block design
-        block_design = np.zeros(int(t_run_tres), dtype=int)
-        for onset in onsets:
-            ons_ind = int(onset)
-            block_design[ons_ind:ons_ind+int(hr_duration)] = 1
-
-        # convolve it with onsets --> high res model
-        model_hr = np.convolve(block_design, hrf)[:int(t_run)]
-
-        # downsample to TR --> low res model
-        model_lr = signal.resample(model_hr, nsamples, window='ham')
-
+        hrf_model = simple_hrf_dataset(events=onsets, nsamples=nsamples * 2, tr=tr, tres=1, baseline=1,
+                                       signal_level=sigchange,
+                                       noise_level=0).samples[:, 0]
         """
         add activation to data set
         """
-        # add model activation to those voxels
-        for sample, activation in zip(dataset_with_signal.samples, model_lr):
-            sample[roi_indices] += activation
+        # add model activation to roi voxels
+        # import pdb; pdb.set_trace()
+        for sample, activation in zip(dataset_with_signal.samples, hrf_model):
+            sample[roi_indices] *= activation
 
     return dataset_with_signal
 

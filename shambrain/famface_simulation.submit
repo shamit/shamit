@@ -1,0 +1,7 @@
+Universe   = vanilla
+Executable = run_simulation.sh
+# Arguments  = sub001
+Log        = famface_simulation.log
+Output     = famface_simulation.out
+Error      = famface_simulation.error
+Queue
