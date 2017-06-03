@@ -61,7 +61,7 @@ def simulate_run(infile, workdir, lfnl=3, hfnl=.5):
     return shambold
 
 
-def get_onsets_famface(inpath, amplitudes=[8, 1]):
+def get_onsets_famface(inpath, amplitudes):
     """
     get event onsets from text file
     """
@@ -100,6 +100,7 @@ def get_onsets_famface(inpath, amplitudes=[8, 1]):
              'roivalue': 2}]
 
     return spec
+
 
 def add_signal_custom(ds, ms, spec, tpeak=0.8, fwhm=1, fir_length=15):
     """
