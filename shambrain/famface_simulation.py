@@ -9,9 +9,14 @@ if __name__ == "__main__":
     import os
     from shambrain import *
     from mvpa2.datasets.mri import fmri_dataset, map2nifti
+    import sys
+
+    sub = sys.argv[1]
 
     amplitudes = [8, 1]
-    runs_unsorted = os.listdir('/data/famface/openfmri/oli/simulation/dataladclone/sub002/model/model001/onsets')
+    runs_unsorted = os.listdir(
+        os.path.join('/data/famface/openfmri/data/',
+                     sub, 'model/model001/onsets'))
     runs = [run for run in sorted(runs_unsorted)]
 
     # get mask
@@ -20,22 +25,30 @@ if __name__ == "__main__":
 
     for run in runs:
 
-        workdir = os.path.join('/data/famface/openfmri/oli/simulation/mcfiles', run)
+        workdir = os.path.join('/data/famface/openfmri/oli/simulation/mcfiles', sub, run)
         if not os.path.exists(workdir):
             os.makedirs(workdir)
 
-        prep_run_dir = run.replace('task001_', '')
+        mni_run_dir = run.replace('task001_', '')
         noise = simulate_run(
-            os.path.join('/data/famface/openfmri/results/l1ants_final/model001/task001/sub001/bold/',
-                         prep_run_dir, 'bold_mni.nii.gz'),
+            os.path.join('/data/famface/openfmri/results/l1ants_final/model001/task001/',
+                         sub, 'bold/', mni_run_dir, 'bold_mni.nii.gz'),
             workdir)
 
         # get onsets
         spec = get_onsets_famface(
-            os.path.join('/data/famface/openfmri/oli/simulation/dataladclone/sub001/model/model001/onsets', run),
+            os.path.join('/data/famface/openfmri/data/',
+                         sub, 'model/model001/onsets', run),
             amplitudes)
-
         amplitudes[1] += 0.5
+
+        # create second specification for contrast that does not increase and give it another roi value
+        import copy
+        straightspec = copy.deepcopy(spec)
+        for cond in straightspec:
+            cond['amplitude'] = 8
+            cond['roivalue'] = 24
+            spec.append(cond)
 
         # add signal
         with_signal = add_signal_custom(noise, ms, spec)
@@ -43,11 +56,5 @@ if __name__ == "__main__":
         # save data
         image = map2nifti(with_signal)
         image.to_filename(
-            os.path.join('/data/famface/openfmri/oli/simulation/dataladclone/'
-                         'sub001/BOLD/', run, 'sim.nii.gz'))
-
-    # get sub-id and run-number from command line arguments
-    # should be: python famface_simulation.py sub001
-    # import sys
-    # sub = sys.argv[1]
-    # run_number = sys.argv[2]
+            os.path.join('/data/famface/openfmri/data/',
+                         sub, 'BOLD', run, 'sim.nii.gz'))

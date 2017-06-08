@@ -4,14 +4,8 @@
 Simulate fMRI run with no activation.
 """
 
-# parse as command line argument
-# bids_dir
-
 import numpy as np
-from scipy import signal
-from mvpa2.datasets.mri import fmri_dataset, map2nifti
-from mvpa2.misc.data_generators import double_gamma_hrf
-from mvpa2.misc.data_generators import single_gamma_hrf
+from mvpa2.datasets.mri import fmri_dataset
 from mvpa2.misc.data_generators import autocorrelated_noise
 from mvpa2.misc.data_generators import simple_hrf_dataset
 from nipype.interfaces import fsl
@@ -71,10 +65,10 @@ def get_onsets_famface(inpath, amplitudes):
     else:
         confiles = os.listdir(inpath)
 
-    famfiles = ['cond002.txt', 'cond003.txt', 'cond004.txt', 'cond005.txt']
+    famfiles = ['cond006.txt', 'cond007.txt', 'cond008.txt', 'cond009.txt']
     fam_paths = [os.path.join(inpath, confile) for confile in confiles if confile in famfiles]
 
-    unfamfiles = ['cond006.txt', 'cond007.txt', 'cond008.txt', 'cond009.txt']
+    unfamfiles = ['cond002.txt', 'cond003.txt', 'cond004.txt', 'cond005.txt']
     unfam_paths = [os.path.join(inpath, confile) for confile in confiles if confile in unfamfiles]
 
     # collect onsets of all familiar faces
@@ -117,9 +111,6 @@ def add_signal_custom(ds, ms, spec, tpeak=0.8, fwhm=1, fir_length=15):
     tr = ds.sa['time_coords'][1] - ds.sa['time_coords'][0]
     nsamples = len(ds.samples)
 
-    # temporal resolution of hrf model in seconds
-    tres = 0.5
-
     """
     loop over specified conditions
     """
@@ -149,6 +140,48 @@ def add_signal_custom(ds, ms, spec, tpeak=0.8, fwhm=1, fir_length=15):
 
     return dataset_with_signal
 
+
+def add_signal_lagged(ds, ms, spec):
+    """
+    Basically the same as with add_signal_custom but onsets are shifted by lag.
+    """
+
+    with_lagged_signal = ds.copy()
+    tr = ds.sa['time_coords'][1] - ds.sa['time_coords'][0]
+    nsamples = len(ds.samples)
+
+    """
+    Get parameters from spec
+    """
+    for cond in spec:
+        # condition = spec['conditions'][cond]
+        roivalue = cond['roivalue']
+        amplitude = cond['amplitude']
+        sigchange = float(amplitude) / 100
+
+        """
+        shift onsets by lag in TR units
+        """
+        lag = cond['lag']
+        lag_tr = lag * tr
+        onsets = [ons + lag_tr for ons in cond['onset']]
+
+        # get voxel indices for roi
+        roi_indices = np.where(ms.samples[0] == roivalue)[0]
+
+        """
+        model hrf
+        """
+        hrf_model = simple_hrf_dataset(events=onsets, nsamples=nsamples * 2, tr=tr, tres=1, baseline=1,
+                                       signal_level=sigchange,
+                                       noise_level=0).samples[:, 0]
+        """
+        add activation to data set
+        """
+        for sample, activation in zip(with_lagged_signal.samples, hrf_model):
+            sample[roi_indices] *= activation
+
+    return with_lagged_signal
 
 def get_filepaths_bids(bids_dir):
     """

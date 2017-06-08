@@ -1,7 +1,72 @@
 Universe   = vanilla
 Executable = run_simulation.sh
-# Arguments  = sub001
 Log        = famface_simulation.log
 Output     = famface_simulation.out
 Error      = famface_simulation.error
+
+Arguments  = sub001
+Queue
+Arguments  = sub002
+Queue
+Arguments  = sub003
+Queue
+Arguments  = sub004
+Queue
+Arguments  = sub005
+Queue
+Arguments  = sub006
+Queue
+Arguments  = sub007
+Queue
+Arguments  = sub008
+Queue
+Arguments  = sub009
+Queue
+Arguments  = sub010
+Queue
+Arguments  = sub011
+Queue
+Arguments  = sub012
+Queue
+Arguments  = sub013
+Queue
+Arguments  = sub014
+Queue
+Arguments  = sub015
+Queue
+Arguments  = sub016
+Queue
+Arguments  = sub017
+Queue
+Arguments  = sub018
+Queue
+Arguments  = sub019
+Queue
+Arguments  = sub020
+Queue
+Arguments  = sub021
+Queue
+Arguments  = sub022
+Queue
+Arguments  = sub023
+Queue
+Arguments  = sub024
+Queue
+Arguments  = sub025
+Queue
+Arguments  = sub026
+Queue
+Arguments  = sub027
+Queue
+Arguments  = sub028
+Queue
+Arguments  = sub029
+Queue
+Arguments  = sub030
+Queue
+Arguments  = sub031
+Queue
+Arguments  = sub032
+Queue
+Arguments  = sub033
 Queue
