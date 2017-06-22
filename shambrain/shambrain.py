@@ -6,16 +6,15 @@ fmri data simulation
 
 import numpy as np
 from mvpa2.datasets.mri import fmri_dataset
-from mvpa2.misc.data_generators import autocorrelated_noise
-from mvpa2.misc.data_generators import simple_hrf_dataset
+from fmrisim import generate_stimfunction, double_gamma_hrf
+from mvpa2.misc.data_generators import autocorrelated_noise, simple_hrf_dataset
 from nipype.interfaces import fsl
 import csv
 import os
-import itertools
-
 
 """
 General procedure:
+- get conditions
 - get design parameters
     for each expected effect / condition...
     . onsets
@@ -39,6 +38,9 @@ General procedure:
 
 
 def load_and_mc(infile, workdir):
+    """
+    Perform motion correction on a dataset and load the result in pymvpa
+    """
     # perform motion correction using mcflirt implemented by nipype.
     fsl.FSLCommand.set_default_output_type('NIFTI_GZ')
 
@@ -57,13 +59,55 @@ def load_and_mc(infile, workdir):
     return dataset, tr, nvolumes
 
 
-def get_events_info(infile):
+def get_conditions_openfmri(ds, model_id):
+    """
+    get names of conditions from participants_key.txt
+    along with corresponding filenames for the onsets.
+    """
+    conditions_key_file = os.path.join(
+        ds.basedir, 'models', 'model%03d' % (model_id), 'participants_key.txt')
+
+    with open(conditions_key_file) as f:
+        reader = csv.reader(f, delimiter='\t')
+        condfiles = list(zip(*reader))[1]
+        condnames = list(zip(*reader))[2]
+
+    return condfiles, condnames
+
+
+def get_events_info_openfmri(ds, model_id, task_id, sub, run,
+                             condfiles, condnames):
+    """
+    for given run of given subject in an openfmri dataset, get the onsets and durations.
+    get_conditions_openfmri should be run before.
+    """
+    events_dir = os.path.join(ds.basedir, sub, 'model', 'model%03d' % model_id,
+                              'onsets', 'task%03d_run%03d' % (task_id, run), 'onset')  # /'condXX.txt'
+
+    if set(condfiles) != set(sorted(os.listdir(events_dir))):
+        raise ValueError('the list of conditions in participants_key.txt does not match'
+                         'the conditions specified in the onsets directories.')
+    else:
+
+        design_spec = []
+
+        for cf, cn in zip(condfiles, condnames):
+            conddict = {}
+            conddict['trial_type'] = cn
+            with open(os.path.join(events_dir, '%s.txt' % cf)) as f:
+                reader = csv.reader(f, delimiter='\t')
+                conddict['onsets'] = list(zip(*reader))[0]
+                conddict['durations'] = list(zip(*reader))[1]
+            design_spec.append(conddict)
+
+        return design_spec
+
+
+def get_conditions_bids(infile):
     """
     read onsets, duration and amplitude from 3 column format file.
     (e.g. events.tsv in BIDS format)
     """
-
-    # TODO: make it work with non-tsv input files.
 
     spec = []
 
@@ -83,14 +127,13 @@ def get_events_info(infile):
                 'onsets': [float(row[header.index('onset')]) for row in rows[1:]
                            if row[header.index('trial_type') == event]],
                 'durations': [float(row[header.index('duration')]) for row in rows[1:]
-                             if row[header.index('trial_type') == event]]
+                              if row[header.index('trial_type') == event]]
             }
             spec.append(event_dict)
     return spec
 
 
-def get_design_spec(infile, spec):
-
+def get_signal_spec(infile, spec):
     """
     add info about amplitude, rois, changes in amplitude over time, and lag to spec
     (for each event / trial_type)
@@ -110,88 +153,87 @@ def get_design_spec(infile, spec):
                     event['sample_scalar'] = row[header.index('sample_scalar')]
                     event['run_scalar'] = row[header.index('run_scalar')]
                     event['rois'] = row[header.index('rois')].split(',')
+                    event['signal_type'] = row[header.index('signal_type')].split(',')
                 else:
                     continue
     return spec
 
 
-def univ_neural_signal(tr, nvolumes, onsets, durations, amplitudes,
-                       function='boxcar'):
+def univ_neural_signal(spec, tr, nvolumes):
+    """
+    For each event/condition in the input spec,
+    generate a neural signal function (e.g. boxcar)
+    and append it to the spec
+    """
 
-    if function == 'boxcar':
-        from fmrisim import generate_stimfunction
-        boxcar = generate_stimfunction(onsets, durations, (nvolumes*tr), weights=amplitudes)
+    for event in spec:
+        # TODO: add option for lag
+        if event['signal_type'] == 'boxcar':
+            event['neural_signal'] = generate_stimfunction(event['onsets'],
+                                                           event['durations'],
+                                                           (nvolumes * tr),
+                                                           weights=event['amplitudes'])
 
-        return boxcar
+    return spec
 
     # TODO: More kinds of univariate signals
 
 
-def neural_to_bold(neural_signal, tr, model='double_gamma'):
+def neural_signal2bold(spec, tr):
+    """
+    For each event in spec, convolute the neural signal function with the specified
+    convolutional model and append it to spec as 'bold_model'.
+    """
 
-    if model == 'double_gamma':
+    for event in spec:
+        if event['convolution_model'] == 'double_gamma':
+            event['bold_model'] = double_gamma_hrf(neural_signal, tr)
 
-        from fmrisim import double_gamma_hrf
-        bold_model = double_gamma_hrf(neural_signal, tr)
-
-        return bold_model
+    return spec
 
     # TODO: more convolutional models
 
 
-def make_noise(dataset, tr, noisetype='autocorrelated',
-               lfnl=3, hfnl=.5):
+def make_noise(bold_dataset, tr, noisetype,
+               lfnl=3, hfnl=.5, seedval=1):
+    """
+    Simulate a functional image containing only of noise using an existing
+    image as a pedestal.
+    """
+
+    seed(seedval)
 
     if noisetype == 'autocorrelated':
-
         # convert to sampling rate in Hz
         sr = 1.0 / tr
         cutoff = sr / 4
 
-        with_noise = autocorrelated_noise(dataset, sr, cutoff, lfnl=lfnl, hfnl=hfnl)
+        with_noise = autocorrelated_noise(bold_dataset, sr, cutoff, lfnl=lfnl, hfnl=hfnl)
         return with_noise
 
-    # TODO: more types of noise
+        # TODO: more types of noise
 
 
-def add_signal_lagged(ds, ms, spec):
+def add_signal(ds, ms, spec):
     """
     Basically the same as with add_signal_custom but onsets are shifted by lag.
     """
 
-    with_lagged_signal = ds.copy()
-    tr = ds.sa['time_coords'][1] - ds.sa['time_coords'][0]
-    nsamples = len(ds.samples)
+    # TODO: project mask into subject space!
 
-    """
-    Get parameters from spec
-    """
+    with_signal = ds.copy()
+
     for cond in spec:
-        # condition = spec['conditions'][cond]
         roivalue = cond['roivalue']
-        amplitude = cond['amplitude']
-        sigchange = float(amplitude) / 100
-
-        """
-        shift onsets by lag in TR units
-        """
-        lag = cond['lag']
-        lag_tr = lag * tr
-        onsets = [ons + lag_tr for ons in cond['onset']]
+        bold_model = cond['bold_model']
 
         # get voxel indices for roi
         roi_indices = np.where(ms.samples[0] == roivalue)[0]
 
-        """
-        model hrf
-        """
-        hrf_model = simple_hrf_dataset(events=onsets, nsamples=nsamples * 2, tr=tr, tres=1, baseline=1,
-                                       signal_level=sigchange,
-                                       noise_level=0).samples[:, 0]
-        """
-        add activation to data set
-        """
-        for sample, activation in zip(with_lagged_signal.samples, hrf_model):
-            sample[roi_indices] *= activation
+        # add bold activation model to noise
+        for sample, activation in zip(with_signal.samples, bold_model):
+            sample[roi_indices] += activation
 
-    return with_lagged_signal
+        # TODO: add option for multiplicative vs. additive noise
+
+    return with_signal

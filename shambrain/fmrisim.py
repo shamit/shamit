@@ -1,3 +1,4 @@
+# emacs: -*- mode: python; py-indent-offset: 4; tab-width: 4; indent-tabs-mode: nil; coding: utf-8 -*-
 #  Copyright 2016 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
