@@ -11,7 +11,10 @@ from mvpa2.misc.data_generators import simple_hrf_dataset
 from nipype.interfaces import fsl
 import csv
 import os
+from os.path import join
 import itertools
+from nipype.interfaces import fsl
+from nipype.interfaces.fsl.utils import ConvertXFM
 
 
 def simulate_run(infile, workdir, lfnl=3, hfnl=.5):
@@ -103,6 +106,7 @@ def add_signal_custom(ds, ms, spec, tpeak=0.8, fwhm=1, fir_length=15):
     """
 
     dataset_with_signal = ds.copy()
+    ms = fmri_dataset(ms)
 
     """
     some parameters from data
@@ -139,6 +143,65 @@ def add_signal_custom(ds, ms, spec, tpeak=0.8, fwhm=1, fir_length=15):
             sample[roi_indices] *= activation
 
     return dataset_with_signal
+
+
+def mask2subjspace(sub, run, data_basedir, workdir, mask):
+    """
+    Use fsl.FLIRT to transform roi mask from MNI to subject space (for each run)
+    """
+    from nipype.interfaces import fsl
+    from nipype.interfaces.fsl.utils import ConvertXFM
+    from os.path import join
+    import os
+
+    os.makedirs(join(workdir, sub, run))
+
+    # bold to anat
+    bold2anat = fsl.FLIRT(
+        dof=6, no_clamp=True,
+        in_file=join(data_basedir, sub, 'BOLD', run, 'bold.nii.gz'),
+        reference=join(data_basedir, sub, 'anatomy', 'highres001.nii.gz'),
+        out_matrix_file=join(workdir, sub, run, '%s_%s_bold2anat.txt' % (sub, run)),
+        out_file=join(workdir, sub, run, '%s_%s_bold2anat.nii.gz' % (sub, run)))
+    bold2anat.run()
+
+    # anat to mni
+    anat2mni = fsl.FLIRT(
+        dof=12, interp='nearestneighbour',
+        in_file=join(data_basedir, sub, 'anatomy', 'highres001.nii.gz'),
+        reference='/usr/share/fsl/5.0//data/standard/MNI152_T1_2mm_brain.nii.gz',
+        out_matrix_file=join(workdir, sub, run, '%s_%s_anat2mni.txt' % (sub, run)),
+        out_file=join(workdir, sub, run, '%s_%s_anat2mni.nii.gz' % (sub, run)))
+    anat2mni.run()
+
+    # concatinate matrices
+    concat = ConvertXFM(
+        concat_xfm=True,
+        in_file2=join(workdir, sub, run, '%s_%s_bold2anat.txt' % (sub, run)),
+        in_file=join(workdir, sub, run, '%s_%s_anat2mni.txt' % (sub, run)),
+        out_file=join(workdir, sub, run, '%s_%s_bold2mni.txt' % (sub, run)))
+    concat.run()
+
+
+    # inverse transmatrix
+    inverse = ConvertXFM(
+        in_file=join(workdir, sub, run, '%s_%s_bold2mni.txt' % (sub, run)),
+        out_file=join(workdir, sub, run, '%s_%s_mni2bold.txt' % (sub, run)),
+        invert_xfm=True)
+    inverse.run()
+
+    # apply to mask
+    mni2bold = fsl.FLIRT(
+        interp='nearestneighbour',
+        apply_xfm=True,
+        in_matrix_file=join(workdir, sub, run, '%s_%s_mni2bold.txt' % (sub, run)),
+        in_file=join(mask),
+        reference=join(data_basedir, sub, 'BOLD', run, 'bold.nii.gz'),
+        out_file=join(workdir, sub, run, '%s_%s_roimask.nii.gz' % (sub, run)))
+    mni2bold.run()
+
+    mask_subjspace = join(workdir, sub, run, '%s_%s_roimask.nii.gz' % (sub, run))
+    return mask_subjspace
 
 
 def get_filepaths_bids(bids_dir):
