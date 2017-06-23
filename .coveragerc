@@ -1,9 +1,0 @@
-[run]
-branch = True
-source = shambrain/*
-include = shambrain/*
-
-# shablona content
-# omit = */setup.py
-# [report]
-# include = shablona/*
