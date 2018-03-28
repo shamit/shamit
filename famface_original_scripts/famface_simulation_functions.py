@@ -8,13 +8,12 @@ import numpy as np
 from mvpa2.datasets.mri import fmri_dataset
 from mvpa2.misc.data_generators import autocorrelated_noise
 from mvpa2.misc.data_generators import simple_hrf_dataset
-from nipype.interfaces import fsl
 import csv
 import os
 from os.path import join
 import itertools
-from nipype.interfaces import fsl
 from nipype.interfaces.fsl.utils import ConvertXFM
+from nipype.interfaces import fsl, ants
 
 
 def simulate_run(infile, workdir, lfnl=3, hfnl=.5):
@@ -30,7 +29,7 @@ def simulate_run(infile, workdir, lfnl=3, hfnl=.5):
     outfile:    str
         Path and name of the simulated image
     lfnl:       float
-        Low frequency noise level. Default = 3 Hz
+        Low frequency noise level. Default = 3
     hfnl:       float
         High frequency noise level. Default = None.
     """
@@ -145,9 +144,144 @@ def add_signal_custom(ds, ms, spec, tpeak=0.8, fwhm=1, fir_length=15):
     return dataset_with_signal
 
 
+def mask2subjspace_real(mnimask, anat, pe, mni2anat_hd5, affine_matrix, workdir):
+    """
+    Simulate data based on transformation matrices already obtained
+    from analysis of real data.
+    (This is the same as mask2pe_ants in extract_pe.py for extracting parameter estimates).
+    """
+
+    """
+    paths for temporary files and output file
+    """
+
+    # temporary nifti file
+    mni2anat_out_name = join(workdir, 'mnimask2anat.nii.gz')
+    # inverse affine transform
+    affine_matrix_inverse = join(workdir, 'anat2pe.txt')
+    # path to output file
+    outfile = join(workdir, 'mask2pe.nii.gz')
+
+    """
+    Invert affine and apply both transforms
+    """
+
+    # invert affine transmatrix (output from glm analysis)
+    inverse = ConvertXFM(
+        in_file=affine_matrix,
+        out_file=affine_matrix_inverse,
+        invert_xfm=True)
+    inverse.run()
+
+    # apply inverse transform from mni to anat space
+    # (output from glm analysis)
+    mni2anat = ants.ApplyTransforms(
+        input_image=mnimask,
+        reference_image=anat,
+        output_image=mni2anat_out_name,
+        transforms=[mni2anat_hd5],
+        dimension=3, interpolation='NearestNeighbor',
+        terminal_output='file')
+    mni2anat.run()
+
+    # apply inverse affine transform from anat to pe estimate space
+    mni2pe = fsl.FLIRT(
+        interp='nearestneighbour',
+        apply_xfm=True,
+        in_matrix_file=affine_matrix_inverse,
+        out_matrix_file=join(workdir, 'anat2pe_flirt.mat'),
+        # the above output matrix is redundant. But if we don't specify,
+        # it just gets stored next to the script (and overwritten when
+        # iterating over subjects!). We want it tidy.
+        in_file=mni2anat_out_name,
+        reference=pe,
+        out_file=outfile)
+    mni2pe.run()
+
+    # return path to projected mask
+    return outfile
+
+def mask2subjspace_bet(sub, run, data_basedir, workdir, mask):
+    """
+    Perform brain extraction and se fsl.FLIRT to transform roi mask
+    from MNI to subject space
+    """
+    from nipype.interfaces import fsl
+    from nipype.interfaces.fsl.utils import ConvertXFM
+    from os.path import join
+    import os
+
+    os.makedirs(join(workdir, sub, run))
+
+    # BET anatomical
+
+    anat_fname = join(data_basedir, sub, 'anatomy', 'highres001.nii.gz')
+    anat_brain_fname = join(workdir, sub, run, '%s_%s_anat_brain.nii.gz' % (sub, run))
+
+    btanat = fsl.BET(in_file=anat_fname, out_file=anat_brain_fname)
+    btanat.run()
+
+    # BET bold
+
+    bold_fname = join(data_basedir, sub, 'BOLD', run, 'bold.nii.gz')
+    bold_brain_fname = join(workdir, sub, run, '%s_%s_bold_brain.nii.gz' % (sub, run))
+
+    btbold = fsl.BET(in_file=bold_fname, out_file=bold_brain_fname)
+    btbold.run()
+
+    # bold to anat
+    bold2anat = fsl.FLIRT(
+        dof=6, interp='trilinear',
+        in_file=bold_brain_fname,
+        reference=anat_brain_fname,
+        out_matrix_file=join(workdir, sub, run, '%s_%s_bold2anat.txt' % (sub, run)),
+        out_file=join(workdir, sub, run, '%s_%s_bold2anat.nii.gz' % (sub, run)))
+    bold2anat.run()
+
+    # anat to mni
+    anat2mni = fsl.FLIRT(
+        dof=12,
+        in_file=anat_brain_fname,
+        reference='/usr/share/fsl/5.0//data/standard/MNI152_T1_2mm_brain.nii.gz',
+        out_matrix_file=join(workdir, sub, run, '%s_%s_anat2mni.txt' % (sub, run)),
+        out_file=join(workdir, sub, run, '%s_%s_anat2mni.nii.gz' % (sub, run)))
+    anat2mni.run()
+
+    # concatinate matrices
+    concat = ConvertXFM(
+        concat_xfm=True,
+        in_file2=join(workdir, sub, run, '%s_%s_bold2anat.txt' % (sub, run)),
+        in_file=join(workdir, sub, run, '%s_%s_anat2mni.txt' % (sub, run)),
+        out_file=join(workdir, sub, run, '%s_%s_bold2mni.txt' % (sub, run)))
+    concat.run()
+
+    # inverse transmatrix
+    inverse = ConvertXFM(
+        in_file=join(workdir, sub, run, '%s_%s_bold2mni.txt' % (sub, run)),
+        out_file=join(workdir, sub, run, '%s_%s_mni2bold.txt' % (sub, run)),
+        invert_xfm=True)
+    inverse.run()
+
+    # apply to mask
+    mni2bold = fsl.FLIRT(
+        interp='nearestneighbour',
+        apply_xfm=True,
+        in_matrix_file=join(workdir, sub, run, '%s_%s_mni2bold.txt' % (sub, run)),
+        in_file=join(mask),
+        reference=join(data_basedir, sub, 'BOLD', run, 'bold.nii.gz'),
+        out_file=join(workdir, sub, run, '%s_%s_roimask.nii.gz' % (sub, run)))
+    mni2bold.run()
+
+    mask_subjspace = join(workdir, sub, run, '%s_%s_roimask.nii.gz' % (sub, run))
+
+    # return path of created mask
+    return mask_subjspace
+
+
 def mask2subjspace(sub, run, data_basedir, workdir, mask):
     """
-    Use fsl.FLIRT to transform roi mask from MNI to subject space (for each run)
+    Use fsl.FLIRT to transform roi mask from MNI to subject space
+    (without brain extraction).
     """
     from nipype.interfaces import fsl
     from nipype.interfaces.fsl.utils import ConvertXFM
@@ -182,7 +316,6 @@ def mask2subjspace(sub, run, data_basedir, workdir, mask):
         out_file=join(workdir, sub, run, '%s_%s_bold2mni.txt' % (sub, run)))
     concat.run()
 
-
     # inverse transmatrix
     inverse = ConvertXFM(
         in_file=join(workdir, sub, run, '%s_%s_bold2mni.txt' % (sub, run)),
@@ -201,6 +334,8 @@ def mask2subjspace(sub, run, data_basedir, workdir, mask):
     mni2bold.run()
 
     mask_subjspace = join(workdir, sub, run, '%s_%s_roimask.nii.gz' % (sub, run))
+
+    # return path of created mask
     return mask_subjspace
 
 
