@@ -1,0 +1,8 @@
+# for each effect, specify ...
+#
+trial_type	rois	lag	amplitude	sample_slope	run_slope	signal_type
+#
+friend1		1,2	0	8		1		1		boxcar
+friend2		1,2	0	8		1		1		boxcar
+control1	2,3	0	1		1		1.5		boxcar
+control2	2,3	0	1		1		1.5		boxcar
