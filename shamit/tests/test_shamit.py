@@ -4,7 +4,7 @@ Test functions
 __author__ = "Oliver Contier"
 
 
-from ..shambrain import get_signal_spec
+from ..shamit import get_signal_spec
 
 
 def test_get_signal_spec():

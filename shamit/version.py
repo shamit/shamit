@@ -26,7 +26,7 @@ CLASSIFIERS = ["Development Status :: 3 - Alpha",
                "Topic :: Scientific"]
 
 # Description should be a one-liner:
-description = "shambrain: simple fmri data simulation."
+description = "shamit: simple data simulation."
 # Long description will go up on the pypi page
 long_description = """
 
@@ -34,12 +34,12 @@ INSERT DESCRIPTION HERE
 
 """
 
-NAME = "shambrain"
+NAME = "shamit"
 MAINTAINER = "Oliver Contier, Yaroslav Halchenko"
 MAINTAINER_EMAIL = "o.contier@gmail.com"
 DESCRIPTION = description
 LONG_DESCRIPTION = long_description
-URL = "http://github.com/oliver-contier/shambrain"
+URL = "http://github.com/oliver-contier/shamit"
 DOWNLOAD_URL = ""
 # TODO: correct license
 LICENSE = "MIT"
@@ -50,5 +50,5 @@ MAJOR = _version_major
 MINOR = _version_minor
 MICRO = _version_micro
 VERSION = __version__
-PACKAGE_DATA = {'shambrain': [pjoin('data', '*')]}
+PACKAGE_DATA = {'shamit': [pjoin('data', '*')]}
 REQUIRES = ["nipype", "pymvpa2"]
