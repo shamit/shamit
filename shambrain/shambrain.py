@@ -7,7 +7,10 @@ __author__ = "Oliver Contier"
 
 import numpy as np
 from mvpa2.datasets.mri import fmri_dataset
-from fmrisim import generate_stimfunction, double_gamma_hrf
+
+# TODO: problem is, BRAINIAK demands python 3.4
+from brainiak.utils.fmrisim import generate_stimfunction, double_gamma_hrf
+
 from mvpa2.misc.data_generators import autocorrelated_noise, simple_hrf_dataset
 import csv
 from nipype.interfaces import fsl
