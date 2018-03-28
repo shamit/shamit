@@ -1,6 +1,7 @@
 *.pyc
 *~
 *.DS_Store
+*.idea
 _build/
 auto_examples/
 gen_api/
