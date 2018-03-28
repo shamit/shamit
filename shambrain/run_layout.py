@@ -1,6 +1,7 @@
 """
 Main run script for simulation workflow
 """
+__author__ = "Oliver Contier"
 
 import os
 from mvpa2.datasets.sources.openfmri import OpenFMRIDataset

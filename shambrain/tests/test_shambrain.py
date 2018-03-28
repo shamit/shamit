@@ -1,3 +1,9 @@
+"""
+Test functions
+"""
+__author__ = "Oliver Contier"
+
+
 from ..shambrain import get_signal_spec
 
 

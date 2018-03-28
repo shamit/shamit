@@ -3,6 +3,7 @@
 """
 fmri data simulation
 """
+__author__ = "Oliver Contier"
 
 import numpy as np
 from mvpa2.datasets.mri import fmri_dataset
@@ -15,7 +16,9 @@ from os.path import join
 import os
 
 """
+
 General procedure:
+
 - get conditions
 - get design parameters
     for each expected effect / condition...
@@ -36,6 +39,7 @@ General procedure:
 - generate noise
 - add noise to volume
 - output nifti image
+
 """
 
 

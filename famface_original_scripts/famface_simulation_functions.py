@@ -1,8 +1,9 @@
 #!/usr/bin/python
 # coding=utf-8
 """
-Simulate fMRI run with no activation.
+Simulate fMRI run.
 """
+__author__ = "Oliver Contier"
 
 import numpy as np
 from mvpa2.datasets.mri import fmri_dataset

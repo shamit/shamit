@@ -3,6 +3,8 @@
 """
 Run simulation over our data
 """
+__author__ = "Oliver Contier"
+
 
 if __name__ == "__main__":
 
