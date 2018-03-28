@@ -8,8 +8,10 @@ import numpy as np
 from mvpa2.datasets.mri import fmri_dataset
 from fmrisim import generate_stimfunction, double_gamma_hrf
 from mvpa2.misc.data_generators import autocorrelated_noise, simple_hrf_dataset
-from nipype.interfaces import fsl
 import csv
+from nipype.interfaces import fsl
+from nipype.interfaces.fsl.utils import ConvertXFM
+from os.path import join
 import os
 
 """
@@ -57,6 +59,62 @@ def load_and_mc(infile, workdir):
     nvolumes = len(dataset.samples)
 
     return dataset, tr, nvolumes
+
+
+def mni2bold(bold, anat, standard,  mask, workdir):
+    """
+    Use fsl.FLIRT to transform a mask from MNI to subject space
+    """
+
+    os.makedirs(workdir)
+
+    # bold to anat
+    bold2anat = fsl.FLIRT(
+        dof=6, no_clamp=True,
+        in_file=bold,
+        reference=anat,
+        out_matrix_file=join(workdir, 'bold2anat.txt'),
+        out_file=join(workdir, 'bold2anat.nii.gz'))
+    bold2anat.run()
+
+    # anat to mni
+    anat2mni = fsl.FLIRT(
+        dof=12,
+        in_file=anat,
+        reference=standard,
+        out_matrix_file=join(workdir, 'anat2mni.txt'),
+        out_file=join(workdir, sub, run, '%s_%s_anat2mni.nii.gz' % (sub, run)))
+    anat2mni.run()
+
+    # concatinate matrices
+    concat = ConvertXFM(
+        concat_xfm=True,
+        in_file2=join(workdir, sub, run, '%s_%s_bold2anat.txt' % (sub, run)),
+        in_file=join(workdir, sub, run, '%s_%s_anat2mni.txt' % (sub, run)),
+        out_file=join(workdir, sub, run, '%s_%s_bold2mni.txt' % (sub, run)))
+    concat.run()
+
+    # inverse transmatrix
+    inverse = ConvertXFM(
+        in_file=join(workdir, sub, run, '%s_%s_bold2mni.txt' % (sub, run)),
+        out_file=join(workdir, sub, run, '%s_%s_mni2bold.txt' % (sub, run)),
+        invert_xfm=True)
+    inverse.run()
+
+    # apply to mask
+    mni2bold = fsl.FLIRT(
+        interp='nearestneighbour',
+        apply_xfm=True,
+        in_matrix_file=join(workdir, sub, run, '%s_%s_mni2bold.txt' % (sub, run)),
+        in_file=join(mask),
+        reference=join(data_basedir, sub, 'BOLD', run, 'bold.nii.gz'),
+        out_file=join(workdir, sub, run, '%s_%s_roimask.nii.gz' % (sub, run)))
+    mni2bold.run()
+
+    mask_subjspace = join(workdir, sub, run, '%s_%s_roimask.nii.gz' % (sub, run))
+
+    # return path of created mask
+    return mask_subjspace
 
 
 def get_conditions_openfmri(ds, model_id):
@@ -194,10 +252,10 @@ def neural_signal2bold(spec, tr):
     # TODO: more convolutional models
 
 
-def make_noise(bold_dataset, tr, noisetype,
+def make_noise(bold_dataset, tr, noisetype='autocorrelated',
                lfnl=3, hfnl=.5, seedval=1):
     """
-    Simulate a functional image containing only of noise using an existing
+    Simulate a functional image containing only noise using an existing
     image as a pedestal.
     """
 
